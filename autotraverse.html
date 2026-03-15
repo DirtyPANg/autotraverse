@@ -2330,10 +2330,12 @@ start: <html lang="en">                              end: </html>              �
                             <option value="height">📏 Trig. Height Traverse</option>
                         </select>
                     </div>
-                    <div style="display: flex; gap: 10px;">
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                         <button id="import-csv-modal-btn" style="background-color: #2196f3; padding: 5px 15px; font-size: 14px;">📥 Import CSV</button>
                         <button id="import-tra-modal-btn" style="background-color: #9c27b0; padding: 5px 15px; font-size: 14px;">📥 Import .tra</button>
                         <button id="import-tht-modal-btn" style="background-color: #e91e63; padding: 5px 15px; font-size: 14px;">📥 Import .THT</button>
+                        <button id="export-tra-modal-btn" style="background-color: #795548; padding: 5px 15px; font-size: 14px;">📤 Export .TRA</button>
+                        <button id="export-tht-modal-btn" style="background-color: #607d8b; padding: 5px 15px; font-size: 14px;">📤 Export .THT</button>
                         <button id="manual-calc-btn" style="background-color: #4caf50; padding: 5px 15px; font-size: 14px;">🚀 Calculate</button>
                         <button id="manual-close-btn" style="background: none; border: none; color: #aaa; font-size: 28px; cursor: pointer;">&times;</button>
                     </div>
@@ -3608,7 +3610,9 @@ start: <html lang="en">                              end: </html>              �
                             });
                         });
                         dlBtn.addEventListener('click', function() {
-                            var blob = new Blob([csvTemplate], { type: 'text/csv;charset=utf-8' });
+                            // DOS-compatible: CR+LF line endings, ASCII charset
+                            var dosText = csvTemplate.replace(/\n/g, '\r\n');
+                            var blob = new Blob([dosText], { type: 'text/plain;charset=us-ascii' });
                             var url = URL.createObjectURL(blob);
                             var a = document.createElement('a');
                             a.href = url;
@@ -9737,6 +9741,9 @@ if (foresightData.dataset.length > 0) {
             };
 
             // Toggle horizontal/height traverse table area
+            const exportTraModalBtn = document.getElementById('export-tra-modal-btn');
+            const exportThtModalBtn = document.getElementById('export-tht-modal-btn');
+
             function switchModalType(type) {
                 if (type === 'height') {
                     horizontalTablesArea.style.display = 'none';
@@ -9744,12 +9751,16 @@ if (foresightData.dataset.length > 0) {
                     importCsvModalBtn.style.display = 'none';
                     importTraModalBtn.style.display = 'none';
                     importThtModalBtn.style.display = '';
+                    exportTraModalBtn.style.display = 'none';
+                    exportThtModalBtn.style.display = '';
                 } else {
                     horizontalTablesArea.style.display = 'flex';
                     heightTablesArea.style.display = 'none';
                     importCsvModalBtn.style.display = '';
                     importTraModalBtn.style.display = '';
                     importThtModalBtn.style.display = 'none';
+                    exportTraModalBtn.style.display = '';
+                    exportThtModalBtn.style.display = 'none';
                 }
                 manualTypeSelect.value = type;
             }
@@ -9931,6 +9942,135 @@ if (foresightData.dataset.length > 0) {
                     if (!data || (data.observations || []).length === 0) { alert('No valid height observation data'); return; }
                     populateManualModal(data, TraverseManager._currentEditId);
                     alert('.THT data imported to table');
+                });
+            }
+
+            // Export .TRA from manual modal (GENLAY format: numbered lines, DOS line endings)
+            if (exportTraModalBtn) {
+                exportTraModalBtn.addEventListener('click', () => {
+                    let tra = '';
+                    // Lines 1-6: Admin info
+                    tra += '**1 to 6 is ADMIN. information**\n';
+                    tra += '1,DATE\n';
+                    tra += '2,JOB NUMBER\n';
+                    tra += '3,SURVEYED BY\n';
+                    tra += '4,CONTROL ORIGIN\n';
+                    tra += '5,FIELD BOOK REF\n';
+                    tra += '6,LOCALITY\n';
+
+                    // Lines 10-17: Control points
+                    tra += '**10 to 17 is CONTROL information**\n';
+                    const controlRows = [];
+                    Array.from(tables.controls.querySelectorAll('tr')).forEach(row => {
+                        const st = row.querySelector('.m-station').value.trim();
+                        const n = row.querySelector('.m-n').value.trim();
+                        const e = row.querySelector('.m-e').value.trim();
+                        if (st && n && e) controlRows.push(`${st},${n},${e}`);
+                    });
+                    for (let ln = 10; ln <= 17; ln++) {
+                        const idx = ln - 10;
+                        tra += (idx < controlRows.length) ? `${ln},${controlRows[idx]}\n` : `${ln},,,\n`;
+                    }
+
+                    // Lines 20-22: Start orientation
+                    tra += '**20 to 22 is start orientation**\n';
+                    const startRows = [];
+                    Array.from(tables.start.querySelectorAll('tr')).forEach(row => {
+                        const from = row.querySelector('.m-from').value.trim();
+                        const to = row.querySelector('.m-to').value.trim();
+                        const angle = row.querySelector('.m-angle').value.trim();
+                        const dist = row.querySelector('.m-dist').value.trim();
+                        if (from && to) startRows.push(`${from},${to},${angle},${dist}`);
+                    });
+                    for (let ln = 20; ln <= 22; ln++) {
+                        const idx = ln - 20;
+                        tra += (idx < startRows.length) ? `${ln},${startRows[idx]}\n` : `${ln},,,\n`;
+                    }
+
+                    // Lines 23-25: Closing orientation
+                    tra += '**23 to 25 is closing orientation**\n';
+                    const closeRows = [];
+                    Array.from(tables.close.querySelectorAll('tr')).forEach(row => {
+                        const from = row.querySelector('.m-from').value.trim();
+                        const to = row.querySelector('.m-to').value.trim();
+                        const angle = row.querySelector('.m-angle').value.trim();
+                        const dist = row.querySelector('.m-dist').value.trim();
+                        if (from && to) closeRows.push(`${from},${to},${angle},${dist}`);
+                    });
+                    for (let ln = 23; ln <= 25; ln++) {
+                        const idx = ln - 23;
+                        tra += (idx < closeRows.length) ? `${ln},${closeRows[idx]}\n` : `${ln},,,\n`;
+                    }
+
+                    // Lines 26-90: Intermediate observations
+                    tra += '**26 to 90 is intermediate observation**\n';
+                    const obsRows = [];
+                    Array.from(tables.obs.querySelectorAll('tr')).forEach(row => {
+                        const from = row.querySelector('.m-from').value.trim();
+                        const to = row.querySelector('.m-to').value.trim();
+                        const angle = row.querySelector('.m-angle').value.trim();
+                        const dist = row.querySelector('.m-dist').value.trim();
+                        if (from && to) obsRows.push(`${from},${to},${angle},${dist}`);
+                    });
+                    for (let ln = 26; ln <= 90; ln++) {
+                        const idx = ln - 26;
+                        tra += (idx < obsRows.length) ? `${ln},${obsRows[idx]}\n` : `${ln},,,\n`;
+                    }
+
+                    // DOS-compatible: CR+LF, ASCII
+                    const dosText = tra.replace(/\n/g, '\r\n');
+                    const blob = new Blob([dosText], { type: 'text/plain;charset=us-ascii' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const date = new Date().toISOString().split('T')[0];
+                    a.download = 'Traverse_' + date + '.TRA';
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                });
+            }
+
+            // Export .THT from manual modal (GENLAY height format: quoted fields, DOS line endings)
+            if (exportThtModalBtn) {
+                exportThtModalBtn.addEventListener('click', () => {
+                    // Collect control points
+                    const controlRows = [];
+                    Array.from(tables.htControls.querySelectorAll('tr')).forEach(row => {
+                        const st = row.querySelector('.m-station').value.trim();
+                        const rl = row.querySelector('.m-rl').value.trim();
+                        if (st && rl) controlRows.push({ st, rl });
+                    });
+                    // Collect observations
+                    const obsRows = [];
+                    Array.from(tables.htObs.querySelectorAll('tr')).forEach(row => {
+                        const from = row.querySelector('.m-from').value.trim();
+                        const to = row.querySelector('.m-to').value.trim();
+                        const ih = row.querySelector('.m-ih').value.trim();
+                        const va = row.querySelector('.m-va').value.trim();
+                        const th = row.querySelector('.m-th').value.trim();
+                        const sd = row.querySelector('.m-sd').value.trim();
+                        if (from && to && va && sd) obsRows.push({ from, to, ih, va, th, sd });
+                    });
+                    if (controlRows.length === 0 && obsRows.length === 0) { alert('No data to export'); return; }
+
+                    let tht = '';
+                    // Control points: "Name","RL"
+                    controlRows.forEach(c => { tht += `"${c.st}","${c.rl}"\n`; });
+                    // Observation count
+                    tht += `${obsRows.length}\n`;
+                    // Observations: "From","To","IH","VA","TH","SD"
+                    obsRows.forEach(o => { tht += `"${o.from}","${o.to}","${o.ih}","${o.va}","${o.th}","${o.sd}"\n`; });
+
+                    // DOS-compatible: CR+LF, ASCII
+                    const dosText = tht.replace(/\n/g, '\r\n');
+                    const blob = new Blob([dosText], { type: 'text/plain;charset=us-ascii' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const date = new Date().toISOString().split('T')[0];
+                    a.download = 'HeightTraverse_' + date + '.THT';
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
                 });
             }
 
